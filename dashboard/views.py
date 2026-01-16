@@ -2,10 +2,12 @@ from django.shortcuts import render,redirect
 from .models import UploadWellPictureModel
 from .models import Features
 from .models import Layers
-from .models import water_quality_model
+from .models import WaterQualityModel
 from .models import links
-from django.http import HttpResponse
-# from .models import 
+from .models import MahaDemoV2126April24
+from .models import MahaRiversFromOsmV116June23
+from django.http import HttpResponse, Http404
+from django.contrib.gis.geos import GEOSGeometry
 from django.contrib import messages
 import re,base64,time
 from django.core.files.base import ContentFile
@@ -15,13 +17,386 @@ from .forms import UploadWellPictureForm
 from .forms import quality_form, features_form, physical_features_form
 from .forms import human_form_form, cultural_form, water_usable_form
 from django.http import JsonResponse
-from wagtail.documents.models import Document
-from wagtail.images.models import Image
+from wagtail.documents.models import Document # type: ignore
+from wagtail.images.models import Image #type: ignore
 from django.conf import settings
 from django.http import HttpResponseRedirect
 from django.utils.translation import gettext as _
 
-import os
+import os, requests,json,io
+import pandas as pd
+import matplotlib.pyplot as plt
+# from urllib.parse import quote
+# For Google Earth Engine Code 
+import folium,datetime
+from folium import plugins
+from django.views.generic import TemplateView 
+import ee
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def GeeCode(request):
+    
+    # ee.Initialize()
+    # try:
+    # #     # Initialize Earth Engine
+    #     ee.Initialize()
+
+    #     # Create a Folium Figure object
+    #     figure = folium.Figure()
+
+    #     # Create a Folium Map object
+    #     m = folium.Map(
+    #         location=[21.1710, 79.6550],
+    #         zoom_start=8
+    #     )
+
+    #     # Add the map to the figure
+    #     m.add_to(figure)
+
+    #     # Select the dataset (MODIS NDVI)
+    #     dataset = (ee.ImageCollection('MODIS/006/MOD13Q1')
+    #               .filterDate('2019-07-01', '2019-11-30')
+    #               .first())
+    #     modisndvi = dataset.select('NDVI')
+
+    #     # Define visualization parameters
+    #     vis_paramsNDVI = {
+    #         'min': 0,
+    #         'max': 9000,
+    #         'palette': ['FE8374', 'C0E5DE', '3A837C', '034B48']
+    #     }
+
+    #     # Get the map ID dictionary from Earth Engine
+    #     map_id_dict = ee.Image(modisndvi).getMapId(vis_paramsNDVI)
+
+    #     # Add the Earth Engine raster data as a TileLayer to the Folium map
+    #     folium.raster_layers.TileLayer(
+    #         tiles=map_id_dict['tile_fetcher'].url_format,
+    #         attr='Google Earth Engine',
+    #         name='NDVI',
+    #         overlay=True,
+    #         control=True
+    #     ).add_to(m)
+
+    #     # Add layer control to the Folium map
+    #     m.add_child(folium.LayerControl())
+
+    #     # Render the figure
+    #     figure.render()
+
+    #     # Pass the rendered map to the template
+    #     map_html = figure.render()
+
+    #     return render(request, 'dashboard/index.html', {'map_html': map_html})
+
+    # except ee.EEException as e:
+    #     error_message = f"Earth Engine error: {str(e)}"
+    ee.Initialize()
+    # try:
+    #     Tumsar = ee.FeatureCollection("projects/ee-bhandara/assets/1")
+    #     Mohadi = ee.FeatureCollection("projects/ee-bhandara/assets/2")
+    #     Bhandara = ee.FeatureCollection("projects/ee-bhandara/assets/3")
+    #     Sakoli = ee.FeatureCollection("projects/ee-bhandara/assets/4")
+    #     Lakhani = ee.FeatureCollection("projects/ee-bhandara/assets/5")
+    #     Pauni = ee.FeatureCollection("projects/ee-bhandara/assets/6")
+    #     Lakhandur = ee.FeatureCollection("projects/ee-bhandara/assets/7")
+    #     Dist_Boundary = ee.FeatureCollection("projects/ee-bhandara/assets/DIST_BOUNDRY_1")
+    #     ROIs = [
+    #         {"name": "Tumsar", "feature": Tumsar},
+    #         {"name": "Mohadi", "feature": Mohadi},
+    #         {"name": "Bhandara", "feature": Bhandara},
+    #         {"name": "Sakoli", "feature": Sakoli},
+    #         {"name": "Lakhani", "feature": Lakhani},
+    #         {"name": "Pauni", "feature": Pauni},
+    #         {"name": "Lakhandur", "feature": Lakhandur}
+    #     ]
+
+
+    #     sentinel2 = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+    #     imageVisParam = {"opacity": 1, "bands": ["B4", "B3", "B2"], "min": 0.031892000000000004, "max": 0.204308, "gamma": 1}
+    #     imageVisParam2 = {"opacity": 1, "bands": ["B4", "B3", "B2"], "min": 0.029560000000000003, "max": 0.17644, "gamma": 1}
+
+    #     years = [2018, 2019, 2020, 2021, 2022, 2023]
+    #     results = []
+
+    #     for roi in ROIs:
+    #         roi_results = {'name': roi["name"], 'results': []}
+    #         for year in years:
+    #             start_dry = f'{year}-04-01'
+    #             end_dry = f'{year}-05-30'
+    #             start_wet = f'{year}-09-01'
+    #             end_wet = f'{year}-10-30'
+
+    #           # Filter the image collections
+    #             dry_collection = sentinel2.filterBounds(roi["feature"]).filterDate(start_dry, end_dry).sort('CLOUDY_PIXEL_PERCENTAGE', False)
+    #             wet_collection = sentinel2.filterBounds(roi["feature"]).filterDate(start_wet, end_wet).sort('CLOUDY_PIXEL_PERCENTAGE', False)
+
+    #             if dry_collection.size().getInfo() > 0 and wet_collection.size().getInfo() > 0:
+    #                 Image_dry = dry_collection.mosaic().multiply(0.0001).clip(roi["feature"])
+    #                 Image_wet = wet_collection.mosaic().multiply(0.0001).clip(roi["feature"])
+
+    #                 map_id_dry = Image_dry.getMapId(imageVisParam)
+    #                 map_id_wet = Image_wet.getMapId(imageVisParam2)
+
+    #                 NDWI_dry = Image_dry.normalizedDifference(['B3', 'B8'])
+    #                 NDWI_wet = Image_wet.normalizedDifference(['B3', 'B8'])
+
+    #                 wet_season_water = NDWI_wet.gt(0.2).And(NDWI_dry.lt(0.2))
+    #                 water_mask = wet_season_water.updateMask(wet_season_water)
+
+    #                 area_water = water_mask.multiply(ee.Image.pixelArea())
+
+    #                 area_stats = area_water.reduceRegion(
+    #                     reducer=ee.Reducer.sum(),  # Correct reducer instantiation
+    #                     geometry=roi["feature"].geometry(),
+    #                     scale=10,
+    #                     maxPixels=1e10
+    #                 )
+
+    #                 total_area_water = area_stats.getInfo().get('area', 0)  # Correct key for the area
+
+    #                 roi_results['results'].append({
+    #                     'year': year,
+    #                     'map_id_dry': map_id_dry,
+    #                     'map_id_wet': map_id_wet,
+    #                     'total_area_water': total_area_water
+    #                 })
+
+    #         results.append(roi_results)
+
+    #     context = {'results': results}
+    #     return render(request, 'dashboard/index.html', context)
+    # except Exception as e:
+    #     return render(request, 'dashboard/error.html', {'error': str(e)})
+    try:
+        # Define the ROIs
+        Tumsar = ee.FeatureCollection("projects/water-mapping-gee/assets/Bhandara_tumsar")
+        Mohadi = ee.FeatureCollection("projects/water-mapping-gee/assets/Bhandara_mohadi")
+        Bhandara = ee.FeatureCollection("projects/water-mapping-gee/assets/Bhandara_bhandara")
+        Sakoli = ee.FeatureCollection("projects/water-mapping-gee/assets/Bhandara_sakoli")
+        Lakhani = ee.FeatureCollection("projects/water-mapping-gee/assets/Bhandara_lakhni")
+        Pauni = ee.FeatureCollection("projects/water-mapping-gee/assets/Bhandara_pauni")
+        Lakhandur = ee.FeatureCollection("projects/water-mapping-gee/assets/Bhandara_lakahndur")
+        Tumsar.getInfo()
+        # roi1 = ee.FeatureCollection("projects/ee-bhandara/assets/1");
+        ROIs = [
+            {"name": "Tumsar", "feature": Tumsar},
+            {"name": "Mohadi", "feature": Mohadi},
+            {"name": "Bhandara", "feature": Bhandara},
+            {"name": "Sakoli", "feature": Sakoli},
+            {"name": "Lakhani", "feature": Lakhani},
+            {"name": "Pauni", "feature": Pauni},
+            {"name": "Lakhandur", "feature": Lakhandur}
+        ]
+
+        years = [2019, 2020, 2021, 2022, 2023]
+        results = []
+        # print("roi1 is",roi1)
+        for roi in ROIs:
+            roi_results = {'name': roi["name"], 'results': []}
+            for year in years:
+                roi_results['results'].append({'year': year})
+
+            results.append(roi_results)
+
+        context = {'results': results}
+        return render(request, 'dashboard/index.html', context)
+    except Exception as e:
+        return render(request, 'dashboard/error.html', {'error': str(e)})
+
+def fetch_map_data(request):
+  logger.info("Received fetch_map_data request with params: %s", request.GET)
+  try:
+    roi_name = request.GET.get('roi')
+    year = int(request.GET.get('year'))
+    season = request.GET.get('season')
+
+    # Define the ROIs
+    ROIs = {
+        "Tumsar": ee.FeatureCollection("projects/water-mapping-gee/assets/Bhandara_tumsar"),
+        "Mohadi": ee.FeatureCollection("projects/water-mapping-gee/assets/Bhandara_mohadi"),
+        "Bhandara": ee.FeatureCollection("projects/water-mapping-gee/assets/bhandara_bhandara"),
+        "Sakoli": ee.FeatureCollection("projects/water-mapping-gee/assets/bhandara_sakoli"),
+        "Lakhani": ee.FeatureCollection("projects/water-mapping-gee/assets/bhandara_lakhni"),
+        "Pauni": ee.FeatureCollection("projects/water-mapping-gee/assets/Bhandara_pauni"),
+        "Lakhandur": ee.FeatureCollection("projects/water-mapping-gee/assets/bhandara_lakhandur")
+    }
+
+    roi = ROIs.get(roi_name)
+    sentinel2 = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+    imageVisParam = {"opacity": 1, "bands": ["B4", "B3", "B2"], "min": 0.031892000000000004, "max": 0.204308, "gamma": 1}
+    imageVisParam2 = {"opacity": 1, "bands": ["B4", "B3", "B2"], "min": 0.029560000000000003, "max": 0.17644, "gamma": 1}
+
+    if season == 'wet':
+        start_date = f'{year}-09-01'
+        end_date = f'{year}-10-30'
+        imageVisParam = imageVisParam2
+    else:
+        start_date = f'{year}-04-01'
+        end_date = f'{year}-05-30'
+
+    image_collection = sentinel2.filterBounds(roi).filterDate(start_date, end_date).sort('CLOUDY_PIXEL_PERCENTAGE', False)
+    if image_collection.size().getInfo() == 0:
+        logger.warning("No images found for ROI: %s, Year: %d, Season: %s", roi_name, year, season)
+
+    if image_collection.size().getInfo() > 0:
+        # print("Images available for the selected ROI and date range.")
+        image = image_collection.mosaic().multiply(0.0001).clip(roi)
+        # Calculate NDWI for area calculation
+        ndwi = image.normalizedDifference(['B3', 'B8'])
+        water_mask = ndwi.gt(0.2).updateMask(ndwi.gt(0.2))
+
+        # Calculate the area of water
+        area_water = water_mask.multiply(ee.Image.pixelArea())
+        area_stats = area_water.reduceRegion(
+            reducer=ee.Reducer.sum(),
+            geometry=roi,
+            scale=10,
+            maxPixels=1e10
+        )
+        total_area_water = area_stats.get('nd')  # 'nd' is the default band name for the result of normalizedDifference
+        
+        # Get the map ID
+        map_id = image.getMapId(imageVisParam)
+        print(f"Generated Map ID: {map_id['mapid']}")  # Print the map ID to console
+        image.getInfo()  # Print the image details to console
+        return JsonResponse({
+            'mapid': map_id['mapid'],
+            'total_area_water': total_area_water.getInfo()  # Get the area in square meters
+        })
+    else:
+        return JsonResponse({'error': 'No images available for the specified time period'}, status=404)
+  except Exception as e:
+    return JsonResponse({'error': str(e)}, status=500)
+
+
+def surface_water_stress(request):
+    ee.Initialize()
+    
+    # Define the ROIs
+    roi_dict = {
+        "Tumsar": ee.FeatureCollection("projects/water-mapping-gee/assets/Bhandara_tumsar"),
+        "Mohadi": ee.FeatureCollection("projects/water-mapping-gee/assets/Bhandara_mohadi"),
+        "Bhandara": ee.FeatureCollection("projects/water-mapping-gee/assets/bhandara_bhandara"),
+        "Sakoli": ee.FeatureCollection("projects/water-mapping-gee/assets/bhandara_sakoli"),
+        "Lakhani": ee.FeatureCollection("projects/water-mapping-gee/assets/bhandara_lakhni"),
+        "Pauni": ee.FeatureCollection("projects/water-mapping-gee/assets/Bhandara_pauni"),
+        "Lakhandur": ee.FeatureCollection("projects/water-mapping-gee/assets/bhandara_lakhandur")
+    }
+
+    selected_roi_name = request.GET.get('roi', 'Tumsar')
+    roi = roi_dict[selected_roi_name]
+
+    years = range(2019, 2024)
+    months = range(1, 13)
+
+    area_dict = {}
+
+    for year in years:
+        for month in months:
+            total_area_water = process_roi(roi, year, month)
+            area_dict[f"{year}-{month:02d}"] = total_area_water
+
+    # Convert area_dict to a list of dictionaries for JSON serialization
+    area_data = [{"date": key, "area": value} for key, value in area_dict.items()]
+
+    # Pass the data and ROIs to the template
+    context = {
+        'area_data': json.dumps(area_data),
+        'rois': list(roi_dict.keys()),
+        'selected_roi': selected_roi_name
+    }
+    return render(request, 'dashboard/index.html', context)
+
+def process_roi(roi, year, month):
+    start_date = f"{year}-{month:02d}-01"
+    end_date = f"{year}-{month:02d}-28"
+
+    sentinel2 = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+    image_monthly = sentinel2.filterBounds(roi) \
+                             .filterDate(start_date, end_date) \
+                             .sort('CLOUDY_PIXEL_PERCENTAGE', False) \
+                             .mosaic() \
+                             .multiply(0.0001) \
+                             .clip(roi)
+
+    ndwi_monthly = image_monthly.normalizedDifference(['B3', 'B8'])
+    water_mask = ndwi_monthly.gt(0.2).updateMask(ndwi_monthly.gt(0.2))
+
+    area_water = water_mask.multiply(ee.Image.pixelArea())
+    area_stats = area_water.reduceRegion(
+        reducer=ee.Reducer.sum(),
+        geometry=roi,
+        scale=10,
+        maxPixels=1e10
+    )
+
+    total_area_water = ee.Number(area_stats.get('nd'))
+    return total_area_water.getInfo()
+
+
+# import json
+# from django.shortcuts import render
+# import ee
+
+# def surface_water_stress(request):
+#     ee.Initialize()
+    
+#     # Define the ROIs
+#     roi_dict = {
+#         "Tumsar": ee.FeatureCollection("projects/water-mapping-gee/assets/Bhandara_tumsar"),
+#         "Mohadi": ee.FeatureCollection("projects/water-mapping-gee/assets/Bhandara_mohadi"),
+#         "Bhandara": ee.FeatureCollection("projects/water-mapping-gee/assets/bhandara_bhandara"),
+#         "Sakoli": ee.FeatureCollection("projects/water-mapping-gee/assets/bhandara_sakoli"),
+#         "Lakhani": ee.FeatureCollection("projects/water-mapping-gee/assets/bhandara_lakhni"),
+#         "Pauni": ee.FeatureCollection("projects/water-mapping-gee/assets/Bhandara_pauni"),
+#         "Lakhandur": ee.FeatureCollection("projects/water-mapping-gee/assets/bhandara_lakhandur")
+#     }
+
+#     selected_roi_name = request.GET.get('roi', 'Tumsar')
+#     selected_year_range = request.GET.get('year_range', '2019-2020')
+#     roi = roi_dict[selected_roi_name]
+    
+#     year_start, year_end = [int(x) for x in selected_year_range.split('-')]
+#     years = range(year_start, year_end + 1)
+
+#     map_urls = {year: generate_map_url(roi, year) for year in years}
+
+#     # Pass the data and ROIs to the template
+#     context = {
+#         'map_urls': json.dumps(map_urls),
+#         'rois': list(roi_dict.keys()),
+#         'selected_roi': selected_roi_name,
+#         'year_ranges': ['2019-2020', '2021-2022', '2023-2024'],
+#         'selected_year_range': selected_year_range
+#     }
+#     return render(request, 'dashboard/index.html', context)
+
+# def generate_map_url(roi, year):
+#     start_date = f"{year}-01-01"
+#     end_date = f"{year}-12-31"
+
+#     sentinel2 = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+#     image_yearly = sentinel2.filterBounds(roi) \
+#                              .filterDate(start_date, end_date) \
+#                              .sort('CLOUDY_PIXEL_PERCENTAGE', False) \
+#                              .mosaic() \
+#                              .multiply(0.0001) \
+#                              .clip(roi)
+
+#     ndwi_yearly = image_yearly.normalizedDifference(['B3', 'B8'])
+#     water_mask = ndwi_yearly.gt(0.2).updateMask(ndwi_yearly.gt(0.2))
+
+#     map_id_dict = water_mask.getMapId({
+#         'min': 0,
+#         'max': 1,
+#         'palette': ['blue']
+#     })
+
+#     return f"https://earthengine.googleapis.com/map/{map_id_dict['mapid']}/{{Z}}/{{X}}/{{Y}}?token={map_id_dict['token']}"
 
 def HomePage(request):
     return render(request, "HomePage.html")
@@ -48,18 +423,48 @@ def watergis_new(request):
     context = {'wells': wells,'wellcount':wellcount,'features': features, 'layers': layers}
     return render(request,'dashboard/watergis.html',context)
 
+def nearestquery(request):
+    return render(request,'dashboard/components/nearestquery.html')
+
+
 def watergis_new2(request):
     user_district = request.GET.get('district')
+    print(f"User district is: {user_district}")
     wells = UploadWellPictureModel.objects.all()
     wellcount = UploadWellPictureModel.objects.count()
     # Query the Features model to get the relevant district
-    features = Features.objects.filter(district_name=user_district)
+    if user_district:
+        features = Features.objects.filter(district_name=user_district)
+        layers = Layers.objects.filter(features__district_name=user_district)
+        river_names = get_river_names_for_district(user_district)
+    else:
+        features = Features.objects.none()
+        layers = Layers.objects.none()
+        river_names = []
+
+
+
+    # features = Features.objects.filter(district_name=user_district)
 
     # Query the Layers model to get the layers related to the district
-    layers = Layers.objects.filter(features__district_name=user_district)
+    # layers = Layers.objects.filter(features__district_name=user_district)
+    district_list = Features.objects.values_list('district_name', flat=True).distinct().order_by('district_name')
+
     Alllayers = Layers.objects.all()
 
-    context = {'wells': wells,'wellcount':wellcount,'features': features, 'layers': layers,'alllayers':Alllayers}
+    # Fetch river names for the selected district
+    # river_names = get_river_names_for_district(user_district)
+
+    context = {
+        'wells': wells,
+        'wellcount':wellcount,
+        'features': features,
+        'layers': layers,
+        'alllayers':Alllayers,
+        'river_names': river_names,
+        'district_name': user_district,
+        'district_list': district_list
+        }
     return render(request,'dashboard/watergis2.html',context)
 
 def watergis(request):
@@ -154,48 +559,49 @@ def water_quality_form(request):
         form = quality_form(request.POST)
         if form.is_valid():
             # Extract form data
-            print(request.POST['name'])
-            name = request.POST['name']
-            state = request.POST['state']
-            district = request.POST['district']
-            taluka = request.POST['taluka']
-            village = request.POST['village']
-            gram_panch = request.POST['gram_panch']
-            water_quality = request.POST['water_quality']
-            color= request.POST['color']
-            odour= request.POST['odour']
-            taste= request.POST['taste']
-            ph = request.POST['ph']
-            turbid = request.POST['turbid']
-            hard = request.POST['hard']
-            chloride = request.POST['chloride']
-            alkaline = request.POST['alkaline']
-            nitrate = request.POST['nitrate']
-            fluoride = request.POST['fluoride']
-            iron = request.POST['iron']
-            chlorine = request.POST['chlorine']
-            calcium = request.POST['calcium']
-            magnesium = request.POST['magnesium']
-            date = request.POST['date']
-            
-                # Create and save the model instance
-            quality_model = water_quality_model(name=name, state=state, district=district, taluka=taluka,
-                                                    village=village, gram_panch=gram_panch, water_quality=water_quality,
-                                                    color=color,odour=odour,taste=taste,
-                                                    ph=ph, turbid=turbid, hard=hard, chloride=chloride,
-                                                    alkaline=alkaline, nitrate=nitrate, fluoride=fluoride,
-                                                    iron=iron, chlorine=chlorine, calcium=calcium,
-                                                    magnesium=magnesium, date=date)
+            name = form.cleaned_data['name']
+            state = form.cleaned_data['state']
+            district = form.cleaned_data['district']
+            taluka = form.cleaned_data['taluka']
+            village = form.cleaned_data['village']
+            gram_panch = form.cleaned_data['gram_panch']
+            water_quality = form.cleaned_data['water_quality']
+            color = form.cleaned_data['color']
+            odour = form.cleaned_data['odour']
+            taste = form.cleaned_data['taste']
+            ph = form.cleaned_data['ph']
+            turbid = form.cleaned_data['turbid']
+            hard = form.cleaned_data['hard']
+            chloride = form.cleaned_data['chloride']
+            alkaline = form.cleaned_data['alkaline']
+            nitrate = form.cleaned_data['nitrate']
+            fluoride = form.cleaned_data['fluoride']
+            iron = form.cleaned_data['iron']
+            chlorine = form.cleaned_data['chlorine']
+            calcium = form.cleaned_data['calcium']
+            magnesium = form.cleaned_data['magnesium']
+            date = form.cleaned_data['date']
+
+            # Create and save the model instance
+            quality_model = WaterQualityModel(
+                name=name, state=state, district=district, taluka=taluka,
+                village=village, gram_panch=gram_panch, water_quality=water_quality,
+                color=color, odour=odour, taste=taste,
+                ph=ph, turbid=turbid, hard=hard, chloride=chloride,
+                alkaline=alkaline, nitrate=nitrate, fluoride=fluoride,
+                iron=iron, chlorine=chlorine, calcium=calcium,
+                magnesium=magnesium, date=date
+            )
             quality_model.save()
             messages.success(request, 'Form submitted successfully!')
-            print('sucesss')
-        # return redirect('success')  # Redirect to a success page after saving the data
-        else:
-            messages.success(request, 'Enter Correct Details!')
             form = quality_form()
-    
-    return render(request,'dashboard/water_quality_form.html',{})
+        else:
+            messages.error(request, 'Enter correct details!')
 
+    else:
+        form = quality_form()
+
+    return render(request, 'dashboard/water_quality_form.html', {'form': form})
 
 def static_files_view(request):
     # static_folder = 'dashboard/static/'
@@ -306,3 +712,298 @@ def set_language(request):
 def index(request):
     output = _('Hello, world!')
     return HttpResponse(output)
+
+def get_layer(request):
+    district = request.GET.get('district')
+    print("district in get_layer function is ",district)
+    if(district == 'Ahmadnagar'):
+        district = 'Ahamadnagar'
+    print("district is now ",district)
+    layer = Layers.objects.filter(name__icontains=district, sub_title='drainage').first()
+    if layer:
+        print("layer name is  "+layer.name)
+        print("layer value is  "+layer.value)
+        layer_name = layer.value
+        print(layer_name +" is layer name")
+    else:
+        layer_name = None
+    return JsonResponse({'layer': layer_name})
+
+
+def get_river_names_for_district(district_name):
+    # district_name = request.GET.get('district')
+    # print("district in get_river_names "+district_name)
+    # Replace with your GeoNode's URL and appropriate parameters
+    url = f'https://geonode.communitygis.in/geoserver/wfs'
+    params = {
+        'service': 'WFS',
+        'version': '1.0.0',
+        'request': 'GetFeature',
+        'typeName': 'geonode:maha_rivers_withDistrict17june24',
+        'outputFormat': 'application/json',
+        'cql_filter': f"distname='Bhandara'"
+    }
+
+    response = requests.get(url, params=params)
+    data = response.json()
+    # Extract river names
+    river_names = sorted({feature['properties']['name'] for feature in data['features'] if 'name' in feature['properties'] and feature['properties']['name']})
+    
+    return river_names
+def get_river_names_for_district(district_name):
+    url = 'https://geonode.communitygis.in/geoserver/wfs'
+    params = {
+        'service': 'WFS',
+        'version': '1.0.0',
+        'request': 'GetFeature',
+        'typeName': 'geonode:maha_rivers_withDistrict17june24',
+        'outputFormat': 'application/json',
+        'cql_filter': f"distname='{district_name}'"
+    }
+
+    print(f"\n🔍 Requesting river names for district: {district_name}")
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        print("🌐 Full Request URL:", response.url)
+        print("📥 Status Code:", response.status_code)
+        print("📦 Content-Type:", response.headers.get("Content-Type"))
+
+        if response.status_code != 200:
+            print("❌ Error: HTTP request failed.")
+            print("🔴 Response Text (truncated):", response.text[:500])
+            return []
+
+        if 'application/json' not in response.headers.get("Content-Type", ""):
+            print("❌ Error: Response is not JSON.")
+            print("🔴 Response Text (truncated):", response.text[:500])
+            return []
+
+        try:
+            data = response.json()
+        except Exception as json_err:
+            print("❌ JSON Decode Error:", json_err)
+            print("🔴 Response Text (truncated):", response.text[:500])
+            return []
+
+        features = data.get("features", [])
+        print(f"✅ Retrieved {len(features)} features.")
+
+        river_names = sorted({
+            feature['properties']['name']
+            for feature in features
+            if 'name' in feature['properties'] and feature['properties']['name']
+        })
+
+        print(f"🏞️ Found {len(river_names)} unique river names.")
+        return river_names
+
+    except requests.exceptions.RequestException as req_err:
+        print("❌ Request Exception:", req_err)
+        return []
+# def district_rivers_view(request, district_name):
+#     district_name = request.GET.get('district')
+
+#     print(district_name)
+#     if not district_name:
+#         return render(request, 'error_template.html', {'error_message': 'No district specified'})
+#     river_names = get_river_names_for_district(district_name)
+#     context = {
+#         'river_names': river_names,
+#         'district_name': district_name
+#     }
+#     return render(request, 'naturalfeatures.html', context)
+
+# def get_villages_near_river(request):
+#     river_name = request.GET.get('river_name')
+#     print("Requested river name:", river_name)
+    
+#     # Replace with your GeoNode's URL and appropriate parameters
+#     geonode_url = 'https://geonode.communitygis.in/geoserver/wfs'
+#     params = {
+#         'service': 'WFS',
+#         'version': '1.0.0',
+#         'request': 'GetFeature',
+#         'typeName': 'geonode:maha_rivers_withDistrict17june24',
+#         'outputFormat': 'application/json',
+#         'cql_filter': f"name='{river_name}'"  # Adjust filter as per your data schema
+#     }
+    
+#     try:
+#         # Fetch river data from GeoNode
+#         response = requests.get(geonode_url, params=params)
+#         response.raise_for_status()  # Raise an exception for HTTP errors
+
+#         river_data = response.json()
+        
+#         river_geometry = None  # Initialize river_geometry
+        
+#         for feature in river_data['features']:
+#             if feature['properties']['name'] == river_name:
+#                 print("River found")
+#                 river_geometry = feature['geometry']
+#                 print(river_geometry)
+#                 break
+        
+#         # If river with given name not found
+#         if river_geometry is None:
+#             print(f"River '{river_name}' not found in GeoNode data.")
+#             return JsonResponse({'error': f"River '{river_name}' not found in GeoNode data."}, status=404)
+
+#         # Convert MultiLineString coordinates to WKT format
+#         def multiline_to_wkt(multiline):
+#             try:
+#                 lines_str = ', '.join([
+#                     f"({', '.join([f'{lon} {lat}' for lon, lat in line])})"
+#                     for line in multiline if all(len(coord) == 2 for coord in line)
+#                 ])
+#                 return f"MULTILINESTRING({lines_str})"
+#             except Exception as e:
+#                 raise ValueError(f"Error in converting coordinates to WKT: {e}")
+
+#         try:
+#             river_geometry_wkt = multiline_to_wkt(river_geometry['coordinates'])
+#         except ValueError as ve:
+#             print(ve)
+#             river_geometry_wkt = None
+
+#         if river_geometry_wkt:
+#             # Now fetch villages near the specified river using another GeoNode API endpoint
+#             villages_geonode_url = 'https://geonode.communitygis.in/geoserver/wfs'
+            
+#             # Parameters for villages WFS GetFeature request
+#             villages_params = {
+#                 'service': 'WFS',
+#                 'version': '1.0.0',
+#                 'request': 'GetFeature',
+#                 'typeName': 'geonode:maha_demo_v21_26april24',
+#                 'outputFormat': 'application/json',
+#                 'cql_filter': f"INTERSECTS(the_geom,MULTILINESTRING((74.4814618 20.1435521, 74.4811614 20.14325)))"
+#             }
+            
+#             # Fetch villages data from GeoNode
+#             villages_response = requests.get(villages_geonode_url, params=villages_params)
+#             villages_response.raise_for_status()  # Raise an exception for HTTP errors
+
+#             villages_data = villages_response.json()
+#             print("Villages data:", villages_data)
+
+#             # Extract relevant information from villages data
+#             villages = []
+#             for feature in villages_data.get('features', []):
+#                 village_name = feature['properties'].get('area_name')  # Adjust based on your actual property name
+#                 village_geom = feature.get('geometry')
+#                 villages.append({
+#                     'name': village_name,
+#                     'geom': village_geom
+#                 })
+            
+#             return JsonResponse({'villages': villages}, safe=False, status=200)  # Ensure to set a proper status code
+    
+#     except requests.exceptions.RequestException as e:
+#         print(f"RequestException: {e}")
+#         return JsonResponse({'error': f"Error fetching data from GeoNode: {e}"}, status=500)
+
+#     except KeyError as e:
+#         print(f"KeyError: {e}")
+#         return JsonResponse({'error': f"KeyError: {e}"}, status=500)
+
+#     except Exception as e:
+#         print(f"Unexpected error: {e}")
+#         return JsonResponse({'error': f"Unexpected error: {e}"}, status=500)
+
+
+def intersecting_villages(request):
+    river_name = request.GET.get('river_name')
+    print(river_name)
+    # Example: Find villages intersecting with a specific river
+    river_id = 1  # Replace with the actual river ID you are interested in
+
+    rivers = MahaRiversFromOsmV116June23.objects.filter(name=river_name)
+    # for river in rivers:
+    #     print(f"River Name: {river.geom}, ID: {river.fid}")
+    if rivers.exists():
+        # Handle the case where there are multiple rivers with the same name
+        # For simplicity, you might choose the first one
+        river = rivers.first()
+        # return river.id
+        intersecting_villages = MahaDemoV2126April24.objects.filter(geom__intersects=river.geom)
+
+    # Optionally, you can perform further operations with intersecting_villages
+        geojson_features = []
+        for village in intersecting_villages:
+            # print(village.area_name, "-", village.cen_2011)
+            geom_geojson = village.geom.geojson  # Convert GEOSGeometry to GeoJSON
+            
+            geojson_feature = {
+                'type': 'Feature',
+                'geometry': geom_geojson,
+                'properties': {
+                    'area_name': village.area_name,
+                    'cen_2011': village.cen_2011,
+                    # Add other properties as needed
+                }
+            }
+            geojson_features.append(geojson_feature)
+            # print(geojson_features[0])
+    # Return a response or render a template as needed
+        return JsonResponse({'type': 'FeatureCollection', 'features': geojson_features})
+
+    else:
+        # Handle case where no river with the given name exists
+        raise Http404("River with name '{}' does not exist".format(river_name))
+        
+def timeseries(request):
+    # Load the data
+    # file_path = "{% static 'data/healthdash/Dates_and_WaterLevel.csv' %}"
+    file_path = os.path.join(settings.BASE_DIR,'dashboard', 'static', 'data', 'healthdash', 'Dates_and_WaterLevel.csv')
+   
+    data = pd.read_csv(file_path)
+
+    # Convert the 'dates' column to datetime format
+    data['Date'] = pd.to_datetime(data['dates'])
+
+    # Filter the data for years after 2018
+    data = data[data['Date'].dt.year > 2018]
+
+    # Set the 'Date' column as the index
+    data.set_index('Date', inplace=True)
+
+    # Extract year from the 'Date' index
+    data['Year'] = data.index.year
+
+    # Plot the data
+    plt.figure(figsize=(10, 6))
+    for year, group in data.groupby('Year'):
+        plt.plot(group.index, group['water area(hectares)'], marker='o', linestyle='-', label=str(year))
+
+    plt.title('Water Level Over Time')
+    plt.xlabel('Date')
+    plt.ylabel('Water Level (hectares)')
+    plt.legend(title='Year')
+    plt.grid(True)
+
+    # Improve date formatting on x-axis
+    plt.gcf().autofmt_xdate()
+
+    # Save the plot to a PNG image in memory
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    image_png = buf.getvalue()
+    buf.close()
+    
+    # Encode the PNG image to base64 string
+    graph = base64.b64encode(image_png).decode('utf-8')
+
+    # Pass the image to the template
+    return render(request, 'dashboard/timeseries.html', {'graph': graph})
+
+
+
+def water_stress(request):
+    # Logic to handle the request and prepare data for the template
+    context = {
+        'message': 'This is the Water Stress view',
+        # Add any other context variables here
+    }
+    return render(request, 'dashboard/water_stress.html', context)
